@@ -1,0 +1,5 @@
+tasks:
+  - id: ford
+    name: Ejecutar Ford-Fulkerson GUI
+    command: python3 Flujo Maximo - Ford Fulkerson.py
+    gui: true

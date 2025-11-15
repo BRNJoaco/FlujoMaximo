@@ -1,0 +1,1493 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, simpledialog
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as path_effects
+import networkx as nx
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.patches as mpatches
+import numpy as np
+from collections import defaultdict, deque
+import random
+import io
+import sys
+
+plt.style.use('seaborn-v0_8-darkgrid' if 'seaborn-v0_8-darkgrid' in plt.style.available else 'default')
+
+class GrafoDirigido:
+    def __init__(self):
+        self.grafo = defaultdict(dict)
+        self.nodos = set()
+        self.aristas_info = []
+    
+    def agregar_arista(self, origen, destino, capacidad):
+        for i, arista in enumerate(self.aristas_info):
+            if arista['origen'] == origen and arista['destino'] == destino:
+                self.aristas_info[i]['capacidad'] = capacidad
+                self.aristas_info[i]['etiqueta'] = f"{origen}→{destino}: {capacidad}"
+                self.grafo[origen][destino] = capacidad
+                return
+        
+        self.grafo[origen][destino] = capacidad
+        self.nodos.add(origen)
+        self.nodos.add(destino)
+        self.aristas_info.append({
+            'origen': origen,
+            'destino': destino, 
+            'capacidad': capacidad,
+            'etiqueta': f"{origen}→{destino}: {capacidad}"
+        })
+    
+    def obtener_capacidad(self, origen, destino):
+        return self.grafo[origen].get(destino, 0)
+    
+    def get_aristas_tabla(self):
+        return [(f"{a['origen']} → {a['destino']}", a['capacidad'], f"{a['origen']}{a['destino']}") 
+                for a in self.aristas_info]
+
+class FordFulkerson:
+    def __init__(self, grafo):
+        self.grafo_original = grafo
+        self.grafo_residual = self.crear_grafo_residual()
+        self.flujo_resultado = defaultdict(lambda: defaultdict(int))
+        self.caminos_encontrados = []
+        self.etiquetas_por_paso = []
+    
+    def crear_grafo_residual(self):
+        residual = defaultdict(dict)
+        for origen in self.grafo_original.grafo:
+            for destino, capacidad in self.grafo_original.grafo[origen].items():
+                residual[origen][destino] = capacidad
+                if destino not in residual or origen not in residual[destino]:
+                    residual[destino][origen] = 0
+        return residual
+    
+    def bfs_camino_aumentante_con_etiquetas(self, fuente, sumidero):
+        etiquetas = {}
+        visitado = set()
+        cola = deque([fuente])
+        visitado.add(fuente)
+        
+        etiquetas[fuente] = ('-', float('inf'), None)
+        
+        print(f"  Etiquetado de nodos:")
+        print(f"    Nodo {fuente}: (-, ∞)")
+        
+        while cola:
+            nodo_actual = cola.popleft()
+            delta_actual = etiquetas[nodo_actual][1]
+            
+            for vecino, capacidad_residual in self.grafo_residual[nodo_actual].items():
+                if vecino not in visitado and capacidad_residual > 0:
+                    es_directa = self.grafo_original.obtener_capacidad(nodo_actual, vecino) > 0
+                    
+                    if es_directa:
+                        delta_nuevo = min(delta_actual, capacidad_residual)
+                        etiquetas[vecino] = (nodo_actual, delta_nuevo, '+')
+                        print(f"    Nodo {vecino}: ({nodo_actual}+, {delta_nuevo})")
+                    else:
+                        flujo_actual = self.flujo_resultado[vecino][nodo_actual]
+                        if flujo_actual > 0:
+                            delta_nuevo = min(delta_actual, flujo_actual)
+                            etiquetas[vecino] = (nodo_actual, delta_nuevo, '-')
+                            print(f"    Nodo {vecino}: ({nodo_actual}-, {delta_nuevo})")
+                    
+                    visitado.add(vecino)
+                    cola.append(vecino)
+                    
+                    if vecino == sumidero:
+                        return self.reconstruir_camino(etiquetas, fuente, sumidero), etiquetas
+        
+        return None, etiquetas
+    
+    def reconstruir_camino(self, etiquetas, fuente, sumidero):
+        camino = []
+        nodo_actual = sumidero
+        
+        while nodo_actual != fuente:
+            camino.append(nodo_actual)
+            nodo_actual = etiquetas[nodo_actual][0]
+        
+        camino.append(fuente)
+        return camino[::-1]
+    
+    def calcular_flujo_maximo(self, fuente, sumidero):
+        flujo_maximo = 0
+        paso = 0
+        
+        print(f"{'='*70}")
+        print(f"ALGORITMO FORD-FULKERSON CON ETIQUETADO")
+        print(f"{'='*70}")
+        print(f"Fuente: {fuente}, Sumidero: {sumidero}\n")
+        
+        while True:
+            paso += 1
+            print(f"\n{'─'*70}")
+            print(f"PASO {paso}: Búsqueda de camino aumentante")
+            print(f"{'─'*70}")
+            
+            camino_tuple = self.bfs_camino_aumentante_con_etiquetas(fuente, sumidero)
+            camino = camino_tuple[0]
+            etiquetas = camino_tuple[1]
+            
+            if not camino:
+                print(f"\n  No se encontró camino aumentante")
+                print(f"  El sumidero {sumidero} no fue etiquetado")
+                break
+            
+            self.etiquetas_por_paso.append(etiquetas.copy())
+            
+            print(f"\n  Camino aumentante encontrado: {' → '.join(map(str, camino))}")
+            
+            capacidad_minima = etiquetas[sumidero][1]
+            
+            print(f"\n  Análisis de aristas en el camino:")
+            for i in range(len(camino) - 1):
+                origen, destino = camino[i], camino[i + 1]
+                capacidad_res = self.grafo_residual[origen][destino]
+                capacidad_orig = self.grafo_original.obtener_capacidad(origen, destino)
+                flujo_act = self.flujo_resultado[origen][destino]
+                
+                if capacidad_orig > 0:
+                    print(f"    {origen} → {destino}: capacidad residual = {capacidad_res}, "
+                          f"capacidad original = {capacidad_orig}, flujo actual = {flujo_act}")
+                else:
+                    print(f"    {origen} → {destino}: arista inversa (reduciendo flujo {destino}→{origen})")
+            
+            print(f"\n  Δ(sumidero) = {capacidad_minima} ← Flujo a enviar por el camino")
+            
+            for i in range(len(camino) - 1):
+                origen, destino = camino[i], camino[i + 1]
+                self.grafo_residual[origen][destino] -= capacidad_minima
+                self.grafo_residual[destino][origen] += capacidad_minima
+                
+                if destino in self.grafo_original.grafo[origen]:
+                    self.flujo_resultado[origen][destino] += capacidad_minima
+                else:
+                    self.flujo_resultado[destino][origen] -= capacidad_minima
+            
+            flujo_maximo += capacidad_minima
+            self.caminos_encontrados.append((camino.copy(), capacidad_minima))
+            
+            print(f"\n  Flujo acumulado total: {flujo_maximo}")
+        
+        print(f"\n{'='*70}")
+        print(f"RESULTADO FINAL")
+        print(f"{'='*70}")
+        print(f"Flujo máximo encontrado: {flujo_maximo}\n")
+        
+        print("Asignación de flujo por arista:")
+        for origen in sorted(self.flujo_resultado.keys()):
+            for destino in sorted(self.flujo_resultado[origen].keys()):
+                flujo = self.flujo_resultado[origen][destino]
+                if flujo > 0:
+                    capacidad_original = self.grafo_original.obtener_capacidad(origen, destino)
+                    print(f"  {origen} → {destino}: {flujo}/{capacidad_original}")
+        
+        return flujo_maximo
+    
+    def obtener_corte_minimo(self, fuente, sumidero):
+        visitado = set()
+        cola = deque([fuente])
+        visitado.add(fuente)
+        
+        while cola:
+            nodo = cola.popleft()
+            for vecino, capacidad in self.grafo_residual[nodo].items():
+                if vecino not in visitado and capacidad > 0:
+                    visitado.add(vecino)
+                    cola.append(vecino)
+        
+        corte_minimo = []
+        capacidad_corte = 0
+        
+        for origen in visitado:
+            for destino in self.grafo_original.nodos:
+                if destino not in visitado:
+                    cap = self.grafo_original.obtener_capacidad(origen, destino)
+                    if cap > 0:
+                        corte_minimo.append((origen, destino))
+                        capacidad_corte += cap
+        
+        return corte_minimo, visitado, capacidad_corte
+    
+    def buscar_soluciones_alternativas(self, fuente, sumidero, flujo_maximo):
+        print(f"\n{'='*70}")
+        print(f"BÚSQUEDA DE SOLUCIONES ALTERNATIVAS")
+        print(f"{'='*70}")
+        
+        aristas_no_saturadas = []
+        for origen in self.flujo_resultado:
+            for destino, flujo in self.flujo_resultado[origen].items():
+                if flujo > 0:
+                    capacidad = self.grafo_original.obtener_capacidad(origen, destino)
+                    if flujo < capacidad:
+                        aristas_no_saturadas.append((origen, destino, flujo, capacidad))
+        
+        if aristas_no_saturadas:
+            print(f"\nAristas con capacidad no saturada:")
+            for origen, destino, flujo, capacidad in aristas_no_saturadas:
+                print(f"  {origen} → {destino}: {flujo}/{capacidad} (disponible: {capacidad - flujo})")
+            print(f"\nExisten posibles redistribuciones del flujo manteniendo el valor máximo {flujo_maximo}")
+        else:
+            print(f"\nTodas las aristas del flujo están saturadas.")
+            print(f"La solución encontrada es única (no hay redistribuciones posibles).")
+
+class GPSOptimizerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Ford-Fulkerson | Algoritmo de Flujo Máximo")
+        self.root.geometry("1400x900")
+        self.root.configure(bg='#f0f0f0')
+        
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        
+        self.colores = {
+            'primario': '#2563eb',
+            'secundario': '#7c3aed', 
+            'exito': '#16a34a',
+            'advertencia': '#ea580c',
+            'fondo': '#ffffff',
+            'texto': '#1f2937'
+        }
+        
+        self.grafo = GrafoDirigido()
+        self.ford_fulkerson = None
+        self.n_nodos_actual = 8
+        self.ultimo_detallado = "" 
+        
+        self.crear_interfaz()
+        self.mostrar_resultado(
+            "Bienvenido al Algoritmo Ford-Fulkerson\n\n" +
+            "INSTRUCCIONES:\n" +
+            "1. Ingresa el número de nodos (8-16)\n" +
+            "2. Elige 'Grafo Aleatorio' o 'Construcción Manual'\n" +
+            "3. Selecciona fuente y sumidero\n" +
+            "4. Presiona 'Calcular Flujo'\n\n"
+        )
+    
+    def crear_interfaz(self):
+        header = tk.Frame(self.root, bg=self.colores['primario'], height=80)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        
+        titulo = tk.Label(header, text="FORD-FULKERSON - FLUJO MÁXIMO", 
+                         font=('Arial', 20, 'bold'), fg='white', bg=self.colores['primario'])
+        titulo.pack(pady=20)
+        
+        main_container = tk.Frame(self.root, bg='#f0f0f0')
+        main_container.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        panel_izq = tk.Frame(main_container, bg='white', relief='raised', bd=2)
+        panel_izq.pack(side='left', fill='y', padx=(0, 10))
+        
+        self._crear_panel_controles(panel_izq)
+        
+        panel_der = tk.Frame(main_container, bg='white', relief='raised', bd=2)
+        panel_der.pack(side='right', fill='both', expand=True)
+        
+        self._crear_panel_visualizacion(panel_der)
+    
+    def _crear_panel_controles(self, parent):
+        tk.Label(parent, text="CONTROLES", font=('Arial', 14, 'bold'),
+                bg='white', fg=self.colores['texto']).pack(pady=20)
+        
+        config_frame = tk.LabelFrame(parent, text="Configuración", 
+                                   font=('Arial', 10, 'bold'), bg='white')
+        config_frame.pack(fill='x', padx=20, pady=10)
+        
+        tk.Label(config_frame, text="Nodos (8-16):", bg='white').grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.n_nodos_var = tk.StringVar(value="8")
+        n_nodos_entry = tk.Entry(config_frame, textvariable=self.n_nodos_var, width=8)
+        n_nodos_entry.grid(row=0, column=1, padx=5, pady=5)
+        
+
+        tk.Button(config_frame, text="Actualizar", command=self.actualizar_combos_por_n,
+                 font=('Arial', 7), bg='#9CA3AF', fg='white', relief='flat').grid(row=0, column=2, padx=2)
+        
+        tk.Label(config_frame, text="Fuente:", bg='white').grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.fuente_var = tk.StringVar(value="")
+        self.fuente_combo = ttk.Combobox(config_frame, textvariable=self.fuente_var, width=6, state='readonly')
+        self.fuente_combo.grid(row=1, column=1, padx=5, pady=5)
+        
+        tk.Label(config_frame, text="Sumidero:", bg='white').grid(row=2, column=0, sticky='w', padx=5, pady=5)
+        self.sumidero_var = tk.StringVar(value="")
+        self.sumidero_combo = ttk.Combobox(config_frame, textvariable=self.sumidero_var, width=6, state='readonly')
+        self.sumidero_combo.grid(row=2, column=1, padx=5, pady=5)
+        
+        btn_frame = tk.Frame(parent, bg='white')
+        btn_frame.pack(fill='x', padx=20, pady=10)
+        
+        botones = [
+            ("Ver Aristas", self._mostrar_tabla_aristas, self.colores['primario']),
+            ("Grafo Aleatorio", self.generar_grafo_aleatorio, self.colores['secundario']),
+            ("Construcción Manual", self.construccion_manual_grafo, '#6366f1'),
+            ("Calcular Flujo", self.calcular_flujo_maximo, self.colores['exito']),
+            ("Ver Detallado Completo", self.ver_detallado_completo, '#8B5CF6'),
+            ("Limpiar", self.limpiar_grafo, self.colores['advertencia'])
+        ]
+        
+        self.botones = {}
+        for texto, comando, color in botones:
+            btn = tk.Button(btn_frame, text=texto, command=comando,
+                          font=('Arial', 9, 'bold'), fg='white', bg=color,
+                          relief='flat', pady=8, cursor='hand2')
+            btn.pack(fill='x', pady=3)
+            self.botones[texto] = btn
+        
+        info_frame = tk.LabelFrame(parent, text="Info del Grafo", 
+                                  font=('Arial', 10, 'bold'), bg='white')
+        info_frame.pack(fill='x', padx=20, pady=10)
+        
+        self.info_text = tk.Text(info_frame, height=6, wrap='word',
+                                font=('Consolas', 8), bg='#f8f9fa')
+        self.info_text.pack(fill='both', padx=10, pady=10)
+        
+        resultados_frame = tk.LabelFrame(parent, text="Resultados Detallados",
+                                       font=('Arial', 10, 'bold'), bg='white')
+        resultados_frame.pack(fill='both', expand=True, padx=20, pady=10)
+        
+        self.results_text = tk.Text(resultados_frame, wrap='word',
+                                   font=('Consolas', 8), bg='#f8f9fa')
+        scroll = tk.Scrollbar(resultados_frame, command=self.results_text.yview)
+        self.results_text.config(yscrollcommand=scroll.set)
+        
+        self.results_text.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        scroll.pack(side='right', fill='y', pady=5)
+    
+    def _crear_panel_visualizacion(self, parent):
+        tk.Label(parent, text="VISUALIZACIÓN DEL GRAFO", 
+                font=('Arial', 14, 'bold'), bg='white', fg=self.colores['texto']).pack(pady=20)
+        
+        self.graph_frame = tk.Frame(parent, bg='white')
+        self.graph_frame.pack(fill='both', expand=True, padx=20, pady=20)
+    
+    def actualizar_combos(self):
+        """Actualizar combos con nodos del grafo actual (SIN cambiar valores seleccionados)"""
+        nodos = sorted(list(self.grafo.nodos))
+        nodos_str = [str(n) for n in nodos]
+        
+        fuente_actual = self.fuente_var.get()
+        sumidero_actual = self.sumidero_var.get()
+        
+        self.fuente_combo['values'] = nodos_str
+        self.sumidero_combo['values'] = nodos_str
+        
+        if fuente_actual in nodos_str:
+            self.fuente_var.set(fuente_actual)
+        elif nodos_str:
+            self.fuente_var.set(nodos_str[0])
+        
+        if sumidero_actual in nodos_str:
+            self.sumidero_var.set(sumidero_actual)
+        elif nodos_str:
+            self.sumidero_var.set(nodos_str[-1])
+    
+    def actualizar_combos_por_n(self):
+        """Actualizar combos basándose en el número de nodos ingresado"""
+        try:
+            n = int(self.n_nodos_var.get())
+            if n < 8 or n > 16:
+                messagebox.showerror("Error", "El número de nodos debe estar entre 8 y 16")
+                return
+            
+            nodos_str = [str(i) for i in range(n)]
+            
+            fuente_actual = self.fuente_var.get()
+            sumidero_actual = self.sumidero_var.get()
+            
+            self.fuente_combo['values'] = nodos_str
+            self.sumidero_combo['values'] = nodos_str
+            
+            if fuente_actual and fuente_actual in nodos_str:
+                self.fuente_var.set(fuente_actual)
+            else:
+                self.fuente_var.set('0')
+            
+            if sumidero_actual and sumidero_actual in nodos_str:
+                self.sumidero_var.set(sumidero_actual)
+            else:
+                self.sumidero_var.set(str(n-1))
+            
+            messagebox.showinfo("Actualizado", 
+                f"Nodos disponibles: 0 a {n-1}\n"
+                f"Puedes seleccionar fuente y sumidero")
+            
+        except ValueError:
+            messagebox.showerror("Error", "Por favor ingresa un número válido")
+    
+    def construccion_manual_grafo(self):
+        """Modo de construcción manual: primero elegir fuente y sumidero, luego aristas"""
+        try:
+            n = int(self.n_nodos_var.get())
+            if n < 8 or n > 16:
+                messagebox.showerror("Error", "El número de nodos debe estar entre 8 y 16")
+                return
+        except ValueError:
+            messagebox.showerror("Error", "Por favor ingresa un número válido")
+            return
+        
+        self.limpiar_grafo()
+        self.n_nodos_actual = n
+        
+        for i in range(n):
+            self.grafo.nodos.add(i)
+        
+        ventana_fs = tk.Toplevel(self.root)
+        ventana_fs.title("Paso 1: Seleccionar Fuente y Sumidero")
+        ventana_fs.geometry("450x300")
+        ventana_fs.configure(bg='white')
+        ventana_fs.grab_set()
+        
+        header = tk.Frame(ventana_fs, bg=self.colores['primario'], height=60)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        
+        tk.Label(header, text=f"PASO 1: ELEGIR FUENTE Y SUMIDERO", 
+                font=('Arial', 14, 'bold'), fg='white', 
+                bg=self.colores['primario']).pack(pady=15)
+        
+        info_frame = tk.Frame(ventana_fs, bg='white')
+        info_frame.pack(fill='x', padx=30, pady=20)
+        
+        tk.Label(info_frame, 
+                text=f"Grafo con {n} nodos (0 a {n-1})\n\n"
+                     "Selecciona qué nodo será la FUENTE\n"
+                     "y qué nodo será el SUMIDERO:",
+                bg='white', justify='center', font=('Arial', 11)).pack(pady=10)
+        
+        select_frame = tk.Frame(ventana_fs, bg='white')
+        select_frame.pack(pady=20)
+        
+        tk.Label(select_frame, text="Fuente:", bg='white', 
+                font=('Arial', 11, 'bold')).grid(row=0, column=0, padx=10, pady=10, sticky='e')
+        
+        fuente_manual_var = tk.StringVar()
+        fuente_manual_combo = ttk.Combobox(select_frame, textvariable=fuente_manual_var, 
+                                          values=[str(i) for i in range(n)], 
+                                          width=10, state='readonly', font=('Arial', 11))
+        fuente_manual_combo.grid(row=0, column=1, padx=10, pady=10)
+        fuente_manual_combo.set('0')
+        
+        tk.Label(select_frame, text="Sumidero:", bg='white', 
+                font=('Arial', 11, 'bold')).grid(row=1, column=0, padx=10, pady=10, sticky='e')
+        
+        sumidero_manual_var = tk.StringVar()
+        sumidero_manual_combo = ttk.Combobox(select_frame, textvariable=sumidero_manual_var, 
+                                            values=[str(i) for i in range(n)], 
+                                            width=10, state='readonly', font=('Arial', 11))
+        sumidero_manual_combo.grid(row=1, column=1, padx=10, pady=10)
+        sumidero_manual_combo.set(str(n-1))
+        
+        def continuar_con_aristas():
+            try:
+                fuente_elegida = int(fuente_manual_var.get())
+                sumidero_elegido = int(sumidero_manual_var.get())
+                
+                if fuente_elegida == sumidero_elegido:
+                    messagebox.showerror("Error", "La fuente y el sumidero deben ser diferentes")
+                    return
+                
+                ventana_fs.destroy()
+                
+                self.fuente_var.set(str(fuente_elegida))
+                self.sumidero_var.set(str(sumidero_elegido))
+                self.actualizar_combos()
+                
+                self._ventana_agregar_aristas_manual(n, fuente_elegida, sumidero_elegido)
+                
+            except ValueError:
+                messagebox.showerror("Error", "Por favor selecciona valores válidos")
+        
+        # Botones
+        btn_frame = tk.Frame(ventana_fs, bg='white')
+        btn_frame.pack(pady=20)
+        
+        tk.Button(btn_frame, text="Continuar →", command=continuar_con_aristas,
+                 font=('Arial', 11, 'bold'), bg=self.colores['exito'], 
+                 fg='white', relief='flat', padx=30, pady=10).pack(side='left', padx=5)
+        
+        tk.Button(btn_frame, text="Cancelar", command=ventana_fs.destroy,
+                 font=('Arial', 11, 'bold'), bg=self.colores['advertencia'], 
+                 fg='white', relief='flat', padx=30, pady=10).pack(side='left', padx=5)
+    
+    def _ventana_agregar_aristas_manual(self, n, fuente, sumidero):
+        """Ventana para agregar aristas después de elegir fuente y sumidero"""
+        ventana = tk.Toplevel(self.root)
+        ventana.title("Paso 2: Construir Aristas")
+        ventana.geometry("550x700")
+        ventana.configure(bg='white')
+        ventana.grab_set()
+        
+        header = tk.Frame(ventana, bg=self.colores['secundario'], height=70)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        
+        tk.Label(header, text=f"PASO 2: CONSTRUCCIÓN DE ARISTAS", 
+                font=('Arial', 14, 'bold'), fg='white', 
+                bg=self.colores['secundario']).pack(pady=10)
+        
+        tk.Label(header, text=f"Fuente: {fuente} → Sumidero: {sumidero}", 
+                font=('Arial', 10), fg='white', 
+                bg=self.colores['secundario']).pack()
+        
+        # Información
+        info_frame = tk.LabelFrame(ventana, text="Información", 
+                                   font=('Arial', 10, 'bold'), bg='white')
+        info_frame.pack(fill='x', padx=20, pady=10)
+        
+        info_text = f"""Nodos: 0 a {n-1}
+Fuente: {fuente} (verde)
+Sumidero: {sumidero} (rojo)
+Nodos intermedios: {[i for i in range(n) if i != fuente and i != sumidero]}
+
+Agrega aristas especificando origen → destino y capacidad"""
+        
+        tk.Label(info_frame, text=info_text, bg='white', justify='left', 
+                font=('Arial', 9)).pack(padx=10, pady=10)
+
+        add_frame = tk.LabelFrame(ventana, text="Agregar Arista", 
+                                 font=('Arial', 10, 'bold'), bg='white')
+        add_frame.pack(fill='x', padx=20, pady=10)
+        
+        tk.Label(add_frame, text="Origen:", 
+                bg='white', font=('Arial', 9, 'bold')).grid(row=0, column=0, sticky='w', padx=10, pady=5)
+        origen_var = tk.StringVar()
+        origen_combo = ttk.Combobox(add_frame, textvariable=origen_var, 
+                                   values=[str(i) for i in range(n)],
+                                   width=8, state='readonly', font=('Arial', 10))
+        origen_combo.grid(row=0, column=1, padx=10, pady=5)
+        
+        tk.Label(add_frame, text="Destino:", 
+                bg='white', font=('Arial', 9, 'bold')).grid(row=1, column=0, sticky='w', padx=10, pady=5)
+        destino_var = tk.StringVar()
+        destino_combo = ttk.Combobox(add_frame, textvariable=destino_var, 
+                                    values=[str(i) for i in range(n)],
+                                    width=8, state='readonly', font=('Arial', 10))
+        destino_combo.grid(row=1, column=1, padx=10, pady=5)
+        
+        tk.Label(add_frame, text="Capacidad:", 
+                bg='white', font=('Arial', 9, 'bold')).grid(row=2, column=0, sticky='w', padx=10, pady=5)
+        capacidad_var = tk.StringVar()
+        capacidad_entry = tk.Entry(add_frame, textvariable=capacidad_var, font=('Arial', 10), width=10)
+        capacidad_entry.grid(row=2, column=1, padx=10, pady=5)
+        
+        lista_frame = tk.LabelFrame(ventana, text="Aristas Agregadas", 
+                                   font=('Arial', 10, 'bold'), bg='white')
+        lista_frame.pack(fill='both', expand=True, padx=20, pady=10)
+        
+        lista_text = tk.Text(lista_frame, height=12, width=45, font=('Consolas', 9), bg='#f8f9fa')
+        scroll = tk.Scrollbar(lista_frame, command=lista_text.yview)
+        lista_text.config(yscrollcommand=scroll.set)
+        lista_text.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        scroll.pack(side='right', fill='y', pady=5)
+        
+        def actualizar_lista():
+            lista_text.delete(1.0, tk.END)
+            if self.grafo.aristas_info:
+                lista_text.insert(tk.END, "Aristas en el grafo:\n\n")
+                for i, arista in enumerate(self.grafo.aristas_info, 1):
+                    tipo_orig = " (F)" if arista['origen'] == fuente else " (S)" if arista['origen'] == sumidero else ""
+                    tipo_dest = " (F)" if arista['destino'] == fuente else " (S)" if arista['destino'] == sumidero else ""
+                    lista_text.insert(tk.END, 
+                        f"{i}. {arista['origen']}{tipo_orig} → {arista['destino']}{tipo_dest} "
+                        f"[cap: {arista['capacidad']}]\n")
+                lista_text.insert(tk.END, f"\n✓ Total: {len(self.grafo.aristas_info)} aristas")
+            else:
+                lista_text.insert(tk.END, "No hay aristas agregadas aún.\n\n" +
+                                 "Comienza agregando la primera arista.")
+        
+        def agregar_arista():
+            try:
+                origen = int(origen_var.get())
+                destino = int(destino_var.get())
+                capacidad = int(capacidad_var.get())
+                
+                if origen < 0 or origen >= n:
+                    messagebox.showerror("Error", f"El origen debe estar entre 0 y {n-1}")
+                    return
+                
+                if destino < 0 or destino >= n:
+                    messagebox.showerror("Error", f"El destino debe estar entre 0 y {n-1}")
+                    return
+                
+                if origen == destino:
+                    messagebox.showerror("Error", "El origen y destino deben ser diferentes")
+                    return
+                
+                if capacidad <= 0:
+                    messagebox.showerror("Error", "La capacidad debe ser un número positivo")
+                    return
+                
+                if destino in self.grafo.grafo[origen]:
+                    messagebox.showwarning("Advertencia", 
+                        f"Ya existe una arista {origen}→{destino}. Se actualizará su capacidad.")
+                
+                self.grafo.agregar_arista(origen, destino, capacidad)
+                
+                origen_var.set('')
+                destino_var.set('')
+                capacidad_var.set('')
+                origen_combo.focus()
+                
+                actualizar_lista()
+                self.visualizar_grafo()
+                self._actualizar_info_grafo()
+                
+            except ValueError:
+                messagebox.showerror("Error", "Por favor ingresa números válidos")
+        
+        def finalizar():
+            if len(self.grafo.aristas_info) == 0:
+                respuesta = messagebox.askyesno("Confirmar", 
+                    "No has agregado ninguna arista. ¿Deseas salir sin guardar?")
+                if respuesta:
+                    ventana.destroy()
+                return
+            
+            if len(self.grafo.aristas_info) < n - 1:
+                respuesta = messagebox.askyesno("Advertencia", 
+                    f"Has agregado solo {len(self.grafo.aristas_info)} aristas.\n" +
+                    f"Es posible que el grafo no esté bien conectado.\n" +
+                    "¿Deseas continuar de todas formas?")
+                if not respuesta:
+                    return
+            
+            messagebox.showinfo("Éxito", 
+                f"Grafo construido exitosamente\n\n" +
+                f"• Nodos: {n}\n" +
+                f"• Fuente: {fuente}\n" +
+                f"• Sumidero: {sumidero}\n" +
+                f"• Aristas: {len(self.grafo.aristas_info)}\n\n" +
+                "Ahora puedes calcular el flujo máximo")
+            
+            ventana.destroy()
+            self.mostrar_resultado(
+                f"GRAFO CONSTRUIDO MANUALMENTE\n\n" +
+                f"Nodos: {n} (0 a {n-1})\n" +
+                f"Fuente: {fuente}\n" +
+                f"Sumidero: {sumidero}\n" +
+                f"Aristas: {len(self.grafo.aristas_info)}\n\n" +
+                "✓ Configuración completa\n" +
+                "Presiona 'Calcular Flujo' para ejecutar el algoritmo"
+            )
+
+        btn_frame = tk.Frame(add_frame, bg='white')
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        
+        tk.Button(btn_frame, text="➕ Agregar Arista", command=agregar_arista,
+                 font=('Arial', 9, 'bold'), bg=self.colores['exito'], 
+                 fg='white', relief='flat', padx=15, pady=5).pack(side='left', padx=5)
+        
+        btn_final_frame = tk.Frame(ventana, bg='white')
+        btn_final_frame.pack(pady=10)
+        
+        tk.Button(btn_final_frame, text="✓ Finalizar Construcción", command=finalizar,
+                 font=('Arial', 10, 'bold'), bg=self.colores['primario'], 
+                 fg='white', relief='flat', padx=20, pady=8).pack(side='left', padx=5)
+        
+        tk.Button(btn_final_frame, text="✗ Cancelar", command=ventana.destroy,
+                 font=('Arial', 10, 'bold'), bg=self.colores['advertencia'], 
+                 fg='white', relief='flat', padx=20, pady=8).pack(side='left', padx=5)
+        
+        actualizar_lista()
+        origen_combo.focus()
+    
+    def _actualizar_info_grafo(self):
+        self.info_text.delete(1.0, tk.END)
+        
+        if self.grafo.nodos:
+            nodos_lista = ', '.join(sorted([str(n) for n in self.grafo.nodos]))
+        else:
+            nodos_lista = "Ninguno"
+        
+        info = f"""NODOS: {nodos_lista}
+ARISTAS: {len(self.grafo.aristas_info)}
+FUENTE: {self.fuente_var.get()}
+SUMIDERO: {self.sumidero_var.get()}""".strip()
+        
+        self.info_text.insert(tk.END, info)
+    
+    def generar_grafo_aleatorio(self):
+        
+        try:
+            n = int(self.n_nodos_var.get())
+            if n < 8 or n > 16:
+                messagebox.showerror("Error", "El número de nodos debe estar entre 8 y 16")
+                return
+        except ValueError:
+            messagebox.showerror("Error", "Por favor ingresa un número válido")
+            return
+
+        self.limpiar_grafo()
+        self.n_nodos_actual = n
+
+        nodos = list(range(n))
+
+        fuente_sel = self.fuente_var.get()
+        sumidero_sel = self.sumidero_var.get()
+        fuente = None
+        sumidero = None
+
+        if fuente_sel and fuente_sel.isdigit() and int(fuente_sel) in nodos:
+            fuente = int(fuente_sel)
+        if sumidero_sel and sumidero_sel.isdigit() and int(sumidero_sel) in nodos:
+            sumidero = int(sumidero_sel)
+
+        disponibles = nodos.copy()
+        if fuente is None:
+            fuente = random.choice(disponibles)
+        if sumidero is None:
+            posibles = [x for x in disponibles if x != fuente]
+            sumidero = random.choice(posibles)
+
+        if fuente == sumidero:
+            posibles = [x for x in nodos if x != fuente]
+            sumidero = random.choice(posibles)
+
+        print(f"\n{'='*70}")
+        print(f"GENERANDO GRAFO ALEATORIO")
+        print(f"{'='*70}")
+        print(f"Nodos totales: {n} | Fuente: {fuente} | Sumidero: {sumidero}")
+
+        nodos_intermedios = [x for x in nodos if x != fuente and x != sumidero]
+        random.shuffle(nodos_intermedios)
+
+        num_intermedios = len(nodos_intermedios)
+        base = num_intermedios // 3
+        resto = num_intermedios % 3
+        tamanos = [base, base, base]
+        for i in range(resto):
+            tamanos[i] += 1  
+
+        idx = 0
+        capa1 = sorted(nodos_intermedios[idx: idx + tamanos[0]]); idx += tamanos[0]
+        capa2 = sorted(nodos_intermedios[idx: idx + tamanos[1]]); idx += tamanos[1]
+        capa3 = sorted(nodos_intermedios[idx: idx + tamanos[2]]); idx += tamanos[2]
+
+        print(f"Distribución por capas:")
+        print(f"  Capa1: {capa1}")
+        print(f"  Capa2: {capa2}")
+        print(f"  Capa3: {capa3}")
+
+        todos_intermedios = capa1 + capa2
+        random.shuffle(todos_intermedios)
+        mitad = len(todos_intermedios) // 2
+        nodos_con_2_conexiones = set(todos_intermedios[:mitad])
+        nodos_con_1_conexion = set(todos_intermedios[mitad:])
+
+        conexiones_salientes = defaultdict(int)
+        aristas_creadas = set()
+
+        if capa1:
+            for destino in capa1:
+                capacidad = random.randint(8, 20)
+                self.grafo.agregar_arista(fuente, destino, capacidad)
+                aristas_creadas.add((fuente, destino))
+                conexiones_salientes[fuente] += 1
+        elif capa2:
+            for destino in capa2:
+                capacidad = random.randint(8, 20)
+                self.grafo.agregar_arista(fuente, destino, capacidad)
+                aristas_creadas.add((fuente, destino))
+                conexiones_salientes[fuente] += 1
+        elif capa3:
+            for destino in capa3:
+                capacidad = random.randint(8, 20)
+                self.grafo.agregar_arista(fuente, destino, capacidad)
+                aristas_creadas.add((fuente, destino))
+                conexiones_salientes[fuente] += 1
+        else:
+            capacidad = random.randint(15, 25)
+            self.grafo.agregar_arista(fuente, sumidero, capacidad)
+            aristas_creadas.add((fuente, sumidero))
+            conexiones_salientes[fuente] += 1
+
+        for nodo_origen in capa1:
+            if capa2:
+                limite = 2 if nodo_origen in nodos_con_2_conexiones else 1
+                max_conexiones = min(limite, len(capa2))
+                num_conexiones = random.randint(1, max_conexiones)
+                destinos = random.sample(capa2, num_conexiones)
+                for d in destinos:
+                    if (nodo_origen, d) not in aristas_creadas:
+                        capacidad = random.randint(5, 18)
+                        self.grafo.agregar_arista(nodo_origen, d, capacidad)
+                        aristas_creadas.add((nodo_origen, d))
+                        conexiones_salientes[nodo_origen] += 1
+
+        for nodo_origen in capa2:
+            if capa3:
+                limite = 2 if nodo_origen in nodos_con_2_conexiones else 1
+                ya_tiene = conexiones_salientes.get(nodo_origen, 0)
+                disponibles = max(0, limite - ya_tiene)
+                if disponibles > 0:
+                    max_conex = min(disponibles, len(capa3))
+                    num_conexiones = random.randint(1, max_conex)
+                    destinos = random.sample(capa3, num_conexiones)
+                    for d in destinos:
+                        if (nodo_origen, d) not in aristas_creadas:
+                            capacidad = random.randint(5, 18)
+                            self.grafo.agregar_arista(nodo_origen, d, capacidad)
+                            aristas_creadas.add((nodo_origen, d))
+                            conexiones_salientes[nodo_origen] += 1
+
+        for nodo_origen in capa3:
+            capacidad = random.randint(8, 20)
+            if (nodo_origen, sumidero) not in aristas_creadas:
+                self.grafo.agregar_arista(nodo_origen, sumidero, capacidad)
+                aristas_creadas.add((nodo_origen, sumidero))
+                conexiones_salientes[nodo_origen] += 1
+
+        entradas = defaultdict(int)
+        for o in self.grafo.grafo:
+            for d in self.grafo.grafo[o]:
+                entradas[d] += 1
+
+        for nodo in capa2:
+            if entradas.get(nodo, 0) == 0:
+                posible_origen = None
+                if capa1:
+                    posible_origen = random.choice(capa1)
+                else:
+                    posible_origen = fuente
+                capacidad = random.randint(5, 18)
+                if (posible_origen, nodo) not in aristas_creadas:
+                    self.grafo.agregar_arista(posible_origen, nodo, capacidad)
+                    aristas_creadas.add((posible_origen, nodo))
+                    conexiones_salientes[posible_origen] += 1
+                    entradas[nodo] += 1
+
+        for nodo in capa3:
+            if entradas.get(nodo, 0) == 0:
+                posible_origen = None
+                if capa2:
+                    posible_origen = random.choice(capa2)
+                elif capa1:
+                    posible_origen = random.choice(capa1)
+                else:
+                    posible_origen = fuente
+                capacidad = random.randint(5, 18)
+                if (posible_origen, nodo) not in aristas_creadas:
+                    self.grafo.agregar_arista(posible_origen, nodo, capacidad)
+                    aristas_creadas.add((posible_origen, nodo))
+                    conexiones_salientes[posible_origen] += 1
+                    entradas[nodo] += 1
+
+        total_aristas = len(self.grafo.aristas_info)
+        print(f"\nTotal aristas creadas: {total_aristas}")
+        self.actualizar_combos()
+        self.fuente_var.set(str(fuente))
+        self.sumidero_var.set(str(sumidero))
+        self._actualizar_info_grafo()
+        self.visualizar_grafo()
+
+        self.mostrar_resultado(
+            f"GRAFO ALEATORIO GENERADO\n\n"
+            f"• {n} nodos (0 a {n-1})\n"
+            f"• {total_aristas} aristas creadas\n"
+            f"• Fuente: {fuente}\n"
+            f"• Sumidero: {sumidero}\n"
+        )
+    
+    def visualizar_grafo(self, mostrar_flujo=False):
+        
+        for widget in self.graph_frame.winfo_children():
+            widget.destroy()
+        
+        if not self.grafo.nodos:
+            return
+        
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        G = nx.DiGraph()
+        for nodo in self.grafo.nodos:
+            G.add_node(nodo)
+
+        edge_labels = {}
+        for origen in self.grafo.grafo:
+            for destino, capacidad in self.grafo.grafo[origen].items():
+                G.add_edge(origen, destino, weight=capacidad)
+                
+                if mostrar_flujo and self.ford_fulkerson:
+                    flujo_actual = self.ford_fulkerson.flujo_resultado[origen][destino]
+                    edge_labels[(origen, destino)] = f"{flujo_actual}/{capacidad}"
+                else:
+                    edge_labels[(origen, destino)] = str(capacidad)
+        
+        pos = self._layout_jerarquico_espaciado(G)
+
+        node_colors = []
+        for nodo in G.nodes():
+            if str(nodo) == self.fuente_var.get():
+                node_colors.append('#4CAF50')
+            elif str(nodo) == self.sumidero_var.get():
+                node_colors.append('#F44336')
+            else:
+                node_colors.append('#2196F3')
+        
+        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1000, 
+                              ax=ax, edgecolors='black', linewidths=3)
+
+        nx.draw_networkx_labels(G, pos, font_size=14, font_weight='bold', 
+                               font_color='white', ax=ax)
+
+        if mostrar_flujo and self.ford_fulkerson:
+            edge_colors = []
+            edge_widths = []
+            for origen, destino in G.edges():
+                flujo_actual = self.ford_fulkerson.flujo_resultado[origen][destino]
+                capacidad = self.grafo.grafo[origen][destino]
+                
+                if flujo_actual > 0:
+                    utilizacion = flujo_actual / capacidad
+                    if utilizacion >= 1.0:
+                        edge_colors.append('#D32F2F')
+                        edge_widths.append(4)
+                    elif utilizacion >= 0.7:
+                        edge_colors.append('#FF9800')
+                        edge_widths.append(3)
+                    else:
+                        edge_colors.append('#4CAF50')
+                        edge_widths.append(2.5)
+                else:
+                    edge_colors.append('#BDBDBD')
+                    edge_widths.append(1.5)
+            
+            nx.draw_networkx_edges(G, pos, edge_color=edge_colors, arrows=True, 
+                                  arrowsize=20, arrowstyle='->', width=edge_widths, 
+                                  ax=ax, min_source_margin=25, min_target_margin=25)
+        else:
+            nx.draw_networkx_edges(G, pos, edge_color='#424242', arrows=True, 
+                                  arrowsize=20, arrowstyle='->', width=2.5, ax=ax,
+                                  min_source_margin=25, min_target_margin=25)
+
+        self._dibujar_etiquetas_optimizadas(ax, G, pos, edge_labels, mostrar_flujo)
+        
+        if mostrar_flujo:
+            titulo = "Red con Flujos Calculados"
+        else:
+            titulo = "Red de Flujo - Grafo Dirigido"
+            
+        ax.set_title(titulo, fontsize=16, fontweight='bold', pad=30)
+        ax.axis('off')
+        
+        if mostrar_flujo and self.ford_fulkerson:
+            legend_elements = [
+                mpatches.Patch(color='#D32F2F', label='Saturada (100%)'),
+                mpatches.Patch(color='#FF9800', label='Alta utilización (≥70%)'),
+                mpatches.Patch(color='#4CAF50', label='Con flujo (<70%)'),
+                mpatches.Patch(color='#BDBDBD', label='Sin flujo')
+            ]
+            ax.legend(handles=legend_elements, loc='upper right', framealpha=0.95, 
+                     fontsize=11, title="Estado de Aristas")
+        else:
+            legend_elements = [
+                mpatches.Patch(color='#4CAF50', label='Fuente'),
+                mpatches.Patch(color='#F44336', label='Sumidero'),
+                mpatches.Patch(color='#2196F3', label='Nodo Intermedio')
+            ]
+            ax.legend(handles=legend_elements, loc='upper right', framealpha=0.95, 
+                     fontsize=11, title="Tipos de Nodos")
+        
+        plt.tight_layout()
+        
+        canvas = FigureCanvasTkAgg(fig, self.graph_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+    
+    def _layout_jerarquico_espaciado(self, G):
+        """Layout con MÁXIMA SEPARACIÓN horizontal y vertical"""
+        return self._crear_layout_espaciado_general(G)
+    
+    def _crear_layout_espaciado_general(self, G):
+        """Layout general con espaciado máximo entre nodos"""
+        pos = {}
+        
+        try:
+            fuente_str = self.fuente_var.get()
+            sumidero_str = self.sumidero_var.get()
+            
+            fuente = int(fuente_str)
+            sumidero = int(sumidero_str)
+        except:
+            nodos = list(G.nodes())
+            if nodos:
+                fuente = min(nodos)
+                sumidero = max(nodos)
+            else:
+                return pos
+
+        capas = {}
+        if fuente in G.nodes():
+            visitados = {fuente: 0}
+            cola = deque([fuente])
+            
+            while cola:
+                nodo = cola.popleft()
+                capa_actual = visitados[nodo]
+                
+                for vecino in G.successors(nodo):
+                    if vecino not in visitados:
+                        visitados[vecino] = capa_actual + 1
+                        cola.append(vecino)
+            
+            capas = visitados
+        
+        max_capa = max(capas.values()) if capas else 0
+        for nodo in G.nodes():
+            if nodo not in capas:
+                if nodo == sumidero:
+                    capas[nodo] = max_capa + 1
+                else:
+                    capas[nodo] = max_capa // 2
+        
+        nodos_por_capa = defaultdict(list)
+        for nodo, capa in capas.items():
+            nodos_por_capa[capa].append(nodo)
+
+        for capa in nodos_por_capa:
+            nodos_por_capa[capa].sort()
+        
+        num_capas = len(nodos_por_capa)
+        
+        for capa, nodos in nodos_por_capa.items():
+            if num_capas > 1:
+                x = capa / (num_capas - 1)
+            else:
+                x = 0.5
+                
+            n_nodos = len(nodos)
+            
+            if n_nodos == 1:
+                y_positions = [0.5]
+            elif n_nodos == 2:
+                y_positions = [0.25, 0.75]
+            elif n_nodos == 3:
+                y_positions = [0.15, 0.5, 0.85]
+            elif n_nodos == 4:
+                y_positions = [0.1, 0.35, 0.65, 0.9]
+            elif n_nodos == 5:
+                y_positions = [0.05, 0.275, 0.5, 0.725, 0.95]
+            else:
+                padding = 0.05
+                height = 1.0 - 2 * padding
+                if n_nodos > 1:
+                    step = height / (n_nodos - 1)
+                    y_positions = [padding + i * step for i in range(n_nodos)]
+                else:
+                    y_positions = [0.5]
+
+            for i, nodo in enumerate(nodos):
+                pos[nodo] = (x, y_positions[i])
+        
+        return pos
+    
+    def _dibujar_etiquetas_optimizadas(self, ax, G, pos, edge_labels, mostrar_flujo):
+        """Dibujar TODAS las etiquetas de peso de forma visible"""
+        
+        posiciones_etiquetas = {}
+        
+        for (origen, destino), label in edge_labels.items():
+            x1, y1 = pos[origen]
+            x2, y2 = pos[destino]
+
+            x_medio = (x1 + x2) / 2
+            y_medio = (y1 + y2) / 2
+
+            dx = x2 - x1
+            dy = y2 - y1
+            
+            length = np.sqrt(dx*dx + dy*dy)
+            if length > 0:
+                perp_x = -dy / length
+                perp_y = dx / length
+                
+                offset = 0.03
+                x_label = x_medio + perp_x * offset
+                y_label = y_medio + perp_y * offset
+            else:
+                x_label = x_medio
+                y_label = y_medio
+            
+            posiciones_etiquetas[(origen, destino)] = (x_label, y_label)
+
+        for (origen, destino), label in edge_labels.items():
+            x_label, y_label = posiciones_etiquetas[(origen, destino)]
+            
+            if mostrar_flujo and self.ford_fulkerson:
+                flujo_actual = self.ford_fulkerson.flujo_resultado[origen][destino]
+                if flujo_actual > 0:
+                    facecolor = '#E8F5E8'
+                    edgecolor = '#2E7D32'
+                    fontweight = 'bold'
+                    fontsize = 11
+                    text_color = '#1B5E20'
+                else:
+                    facecolor = '#F5F5F5'
+                    edgecolor = '#757575'
+                    fontweight = 'normal'
+                    fontsize = 10
+                    text_color = '#424242'
+            else:
+                facecolor = '#FFFFFF'
+                edgecolor = '#1976D2'
+                fontweight = 'bold'
+                fontsize = 11
+                text_color = '#0D47A1'
+
+            ax.text(x_label, y_label, label, 
+                   fontsize=fontsize, 
+                   fontweight=fontweight,
+                   ha='center', va='center', 
+                   color=text_color,
+                   bbox=dict(boxstyle='round,pad=0.3',
+                           facecolor=facecolor, 
+                           edgecolor=edgecolor, 
+                           linewidth=2,
+                           alpha=0.95),
+                   path_effects=[path_effects.withStroke(linewidth=3, foreground='white')],
+                   zorder=1000)
+    
+    def ver_detallado_completo(self):
+        """Mostrar ventana con el detallado completo del algoritmo en tamaño grande"""
+        if not self.ultimo_detallado:
+            messagebox.showwarning("Advertencia", 
+                "Primero debes calcular el flujo máximo.\n"
+                "Presiona 'Calcular Flujo' y luego podrás ver el detallado completo.")
+            return
+        ventana = tk.Toplevel(self.root)
+        ventana.title("Detallado Completo del Algoritmo Ford-Fulkerson")
+        ventana.geometry("900x700")
+        ventana.configure(bg='white')
+        
+        header = tk.Frame(ventana, bg=self.colores['primario'], height=70)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        
+        tk.Label(header, text="DETALLADO COMPLETO - FORD-FULKERSON", 
+                font=('Arial', 16, 'bold'), fg='white', 
+                bg=self.colores['primario']).pack(pady=20)
+
+        content_frame = tk.Frame(ventana, bg='white')
+        content_frame.pack(fill='both', expand=True, padx=20, pady=20)
+
+        texto = tk.Text(content_frame, wrap='word', font=('Consolas', 11), bg='#f8f9fa')
+        scroll_y = tk.Scrollbar(content_frame, orient='vertical', command=texto.yview)
+        scroll_x = tk.Scrollbar(content_frame, orient='horizontal', command=texto.xview)
+        
+        texto.config(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+        
+        texto.grid(row=0, column=0, sticky='nsew')
+        scroll_y.grid(row=0, column=1, sticky='ns')
+        scroll_x.grid(row=1, column=0, sticky='ew')
+        
+        content_frame.grid_rowconfigure(0, weight=1)
+        content_frame.grid_columnconfigure(0, weight=1)
+        
+        texto.insert(1.0, self.ultimo_detallado)
+        texto.config(state='disabled')  
+        
+        btn_frame = tk.Frame(ventana, bg='white')
+        btn_frame.pack(pady=10)
+        
+        def copiar_al_portapapeles():
+            ventana.clipboard_clear()
+            ventana.clipboard_append(self.ultimo_detallado)
+            messagebox.showinfo("Copiado", "El detallado ha sido copiado al portapapeles")
+        
+        tk.Button(btn_frame, text="📋 Copiar al Portapapeles", command=copiar_al_portapapeles,
+                 font=('Arial', 10, 'bold'), bg='#3B82F6', 
+                 fg='white', relief='flat', padx=20, pady=8).pack(side='left', padx=5)
+        
+        tk.Button(btn_frame, text="Cerrar", command=ventana.destroy,
+                 font=('Arial', 10, 'bold'), bg=self.colores['advertencia'], 
+                 fg='white', relief='flat', padx=20, pady=8).pack(side='left', padx=5)
+    
+    def _mostrar_tabla_aristas(self):
+        ventana = tk.Toplevel(self.root)
+        ventana.title("Tabla de Aristas")
+        ventana.geometry("500x600")
+        ventana.configure(bg='white')
+        ventana.grab_set()
+        
+        header = tk.Frame(ventana, bg=self.colores['primario'], height=60)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        
+        tk.Label(header, text="LISTA COMPLETA DE ARISTAS", 
+                font=('Arial', 14, 'bold'), fg='white', bg=self.colores['primario']).pack(pady=15)
+        
+        tabla_frame = tk.Frame(ventana, bg='white')
+        tabla_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        columnas = ('Arista', 'Capacidad', 'ID')
+        tabla = ttk.Treeview(tabla_frame, columns=columnas, show='headings', height=15)
+        
+        tabla.heading('Arista', text='Arista')
+        tabla.heading('Capacidad', text='Capacidad')
+        tabla.heading('ID', text='ID')
+        
+        tabla.column('Arista', width=200, anchor='center')
+        tabla.column('Capacidad', width=100, anchor='center')
+        tabla.column('ID', width=100, anchor='center')
+        
+        for i, (arista, cap, id_arista) in enumerate(self.grafo.get_aristas_tabla(), 1):
+            tabla.insert('', tk.END, values=(arista, cap, id_arista))
+        
+        scroll_tabla = ttk.Scrollbar(tabla_frame, orient='vertical', command=tabla.yview)
+        tabla.configure(yscrollcommand=scroll_tabla.set)
+        
+        tabla.pack(side='left', fill='both', expand=True)
+        scroll_tabla.pack(side='right', fill='y')
+        
+        tk.Button(ventana, text="Cerrar", command=ventana.destroy,
+                 font=('Arial', 10, 'bold'), bg=self.colores['advertencia'], 
+                 fg='white', relief='flat', pady=5).pack(pady=20)
+    
+    def limpiar_grafo(self):
+        self.grafo = GrafoDirigido()
+        self.ford_fulkerson = None
+        self.actualizar_combos()
+        self._actualizar_info_grafo()
+        
+        for widget in self.graph_frame.winfo_children():
+            widget.destroy()
+        
+        self.mostrar_resultado(
+            "Grafo limpiado\n\n"
+            "OPCIONES:\n"
+            "1. 'Grafo Aleatorio': Genera un grafo automáticamente\n"
+            "2. 'Construcción Manual': Construye tu propio grafo arista por arista"
+        )
+    
+    def calcular_flujo_maximo(self):
+        if not self.grafo.nodos:
+            messagebox.showerror("Error", "Primero genera o construye un grafo")
+            return
+        
+        if len(self.grafo.aristas_info) == 0:
+            messagebox.showerror("Error", "El grafo no tiene aristas. Agrega al menos una arista.")
+            return
+        
+        try:
+            fuente_str = self.fuente_var.get()
+            sumidero_str = self.sumidero_var.get()
+
+            fuente = int(fuente_str)
+            sumidero = int(sumidero_str)
+            
+            if fuente == sumidero:
+                messagebox.showerror("Error", "La fuente y el sumidero deben ser diferentes")
+                return
+            
+            if fuente not in self.grafo.nodos or sumidero not in self.grafo.nodos:
+                messagebox.showerror("Error", "La fuente y sumidero deben existir en el grafo")
+                return
+            
+        except ValueError:
+            messagebox.showerror("Error", "La fuente y sumidero deben ser números válidos")
+            return
+        except Exception as e:
+            messagebox.showerror("Error", f"Error: {str(e)}")
+            return
+        
+        old_stdout = sys.stdout
+        sys.stdout = captured_output = io.StringIO()
+        
+        try:
+            self.mostrar_resultado("Ejecutando Ford-Fulkerson con etiquetado...\n")
+            self.root.update()
+            
+            self.ford_fulkerson = FordFulkerson(self.grafo)
+            flujo_maximo = self.ford_fulkerson.calcular_flujo_maximo(fuente, sumidero)
+            
+            corte_minimo, nodos_visitados, capacidad_corte = self.ford_fulkerson.obtener_corte_minimo(fuente, sumidero)
+            
+            print(f"\n{'='*70}")
+            print(f"CORTE MÍNIMO (VALIDACIÓN DEL RESULTADO)")
+            print(f"{'='*70}")
+            print(f"\nConjunto S (alcanzables desde fuente): {sorted(list(nodos_visitados))}")
+            print(f"Conjunto T (no alcanzables): {sorted([n for n in self.grafo.nodos if n not in nodos_visitados])}")
+            print(f"\nAristas del corte mínimo (S → T):")
+            
+            for origen, destino in corte_minimo:
+                capacidad = self.grafo.obtener_capacidad(origen, destino)
+                print(f"  {origen} → {destino}: capacidad = {capacidad}")
+            
+            print(f"\n{'─'*70}")
+            print(f"Capacidad total del corte = {capacidad_corte}")
+            print(f"Flujo máximo calculado = {flujo_maximo}")
+            print(f"{'─'*70}")
+
+            if flujo_maximo == capacidad_corte:
+                print(f"\n✅ VERIFICACIÓN CORRECTA:")
+                print(f"   Flujo máximo ({flujo_maximo}) = Capacidad corte mínimo ({capacidad_corte})")
+                print(f"   El resultado está VALIDADO por el teorema de flujo máximo-corte mínimo")
+            else:
+                print(f"\n⚠️ ADVERTENCIA:")
+                print(f"   Flujo máximo ({flujo_maximo}) ≠ Capacidad corte mínimo ({capacidad_corte})")
+                print(f"   Puede haber un error en el cálculo")
+            
+            self.ford_fulkerson.buscar_soluciones_alternativas(fuente, sumidero, flujo_maximo)
+            
+        finally:
+            sys.stdout = old_stdout
+        
+        output = captured_output.getvalue()
+
+        self.ultimo_detallado = output
+
+        resumen = self._crear_resumen_resultado(output, flujo_maximo, capacidad_corte)
+        self.mostrar_resultado(resumen)
+        
+        self._actualizar_info_grafo()
+        self.visualizar_grafo(mostrar_flujo=True)
+        
+        self._mostrar_resultado_final(flujo_maximo, capacidad_corte)
+    
+    def _crear_resumen_resultado(self, output_completo, flujo_maximo, capacidad_corte):
+        """Crear un resumen del resultado para el panel pequeño"""
+        lineas = output_completo.split('\n')
+
+        resumen = f"{'='*50}\n"
+        resumen += f"RESUMEN - FORD-FULKERSON\n"
+        resumen += f"{'='*50}\n\n"
+        resumen += f"FLUJO MÁXIMO: {flujo_maximo}\n"
+        resumen += f"CAPACIDAD CORTE MÍNIMO: {capacidad_corte}\n\n"
+        
+        if flujo_maximo == capacidad_corte:
+            resumen += "✅ RESULTADO VALIDADO\n"
+            resumen += "   (Flujo máximo = Corte mínimo)\n\n"
+        else:
+            resumen += "⚠️ VERIFICAR RESULTADO\n\n"
+
+        if self.ford_fulkerson:
+            resumen += f"Caminos aumentantes: {len(self.ford_fulkerson.caminos_encontrados)}\n"
+            for i, (camino, flujo) in enumerate(self.ford_fulkerson.caminos_encontrados, 1):
+                camino_str = ' → '.join(map(str, camino))
+                resumen += f"  {i}. {camino_str} (Δ={flujo})\n"
+        
+        resumen += f"\n{'─'*50}\n"
+        resumen += "💡 Presiona 'Ver Detallado Completo'\n"
+        resumen += "   para ver el algoritmo paso a paso\n"
+        resumen += f"{'─'*50}\n"
+        
+        return resumen
+    
+    def _mostrar_resultado_final(self, flujo_maximo, capacidad_corte):
+        ventana = tk.Toplevel(self.root)
+        ventana.title("Resultado Final")
+        ventana.geometry("650x600")
+        ventana.configure(bg='white')
+        ventana.grab_set()
+        
+        header = tk.Frame(ventana, bg=self.colores['exito'], height=80)
+        header.pack(fill='x')
+        header.pack_propagate(False)
+        
+        tk.Label(header, text="FLUJO MÁXIMO CALCULADO", 
+                font=('Arial', 16, 'bold'), fg='white', 
+                bg=self.colores['exito']).pack(pady=25)
+        
+        content = tk.Frame(ventana, bg='white')
+        content.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        tk.Label(content, text=f"Flujo Máximo: {flujo_maximo}", 
+                font=('Arial', 24, 'bold'), fg=self.colores['primario'], 
+                bg='white').pack(pady=10)
+        
+        validacion_frame = tk.Frame(content, bg='#E8F5E9', relief='solid', bd=2)
+        validacion_frame.pack(fill='x', pady=15)
+        
+        if flujo_maximo == capacidad_corte:
+            tk.Label(validacion_frame, text="✅ RESULTADO VALIDADO", 
+                    font=('Arial', 14, 'bold'), fg='#2E7D32', 
+                    bg='#E8F5E9').pack(pady=5)
+            tk.Label(validacion_frame, 
+                    text=f"Flujo máximo ({flujo_maximo}) = Capacidad corte mínimo ({capacidad_corte})", 
+                    font=('Arial', 11), fg='#1B5E20', 
+                    bg='#E8F5E9').pack(pady=5)
+            tk.Label(validacion_frame, 
+                    text="Teorema flujo máximo - corte mínimo cumplido", 
+                    font=('Arial', 9, 'italic'), fg='#388E3C', 
+                    bg='#E8F5E9').pack(pady=5)
+        else:
+            tk.Label(validacion_frame, text="⚠️ VERIFICAR CÁLCULO", 
+                    font=('Arial', 14, 'bold'), fg='#D32F2F', 
+                    bg='#FFEBEE').pack(pady=5)
+            validacion_frame.configure(bg='#FFEBEE')
+            tk.Label(validacion_frame, 
+                    text=f"Flujo máximo ({flujo_maximo}) ≠ Capacidad corte ({capacidad_corte})", 
+                    font=('Arial', 11), fg='#B71C1C', 
+                    bg='#FFEBEE').pack(pady=5)
+        
+        if self.ford_fulkerson:
+            info_frame = tk.LabelFrame(content, text="Información Adicional", 
+                                      font=('Arial', 10, 'bold'), bg='white')
+            info_frame.pack(fill='x', pady=10)
+            
+            tk.Label(info_frame, text=f"Caminos aumentantes: {len(self.ford_fulkerson.caminos_encontrados)}", 
+                    font=('Arial', 11), bg='white').pack(anchor='w', padx=10, pady=3)
+            
+            total_aristas_con_flujo = sum(1 for origen in self.ford_fulkerson.flujo_resultado 
+                                        for destino, flujo in self.ford_fulkerson.flujo_resultado[origen].items() 
+                                        if flujo > 0)
+            
+            tk.Label(info_frame, text=f"Aristas activas: {total_aristas_con_flujo}", 
+                    font=('Arial', 11), bg='white').pack(anchor='w', padx=10, pady=3)
+            
+            tk.Label(info_frame, text=f"Capacidad corte mínimo: {capacidad_corte}", 
+                    font=('Arial', 11), bg='white').pack(anchor='w', padx=10, pady=3)
+        
+        tk.Label(content, text="Flujos por Arista:", 
+                font=('Arial', 12, 'bold'), bg='white').pack(pady=(15, 10))
+        
+        tabla_frame = tk.Frame(content, bg='white')
+        tabla_frame.pack(fill='both', expand=True)
+        
+        columnas = ('Arista', 'Flujo', 'Capacidad', 'Uso %')
+        tabla = ttk.Treeview(tabla_frame, columns=columnas, show='headings', height=8)
+        
+        for col in columnas:
+            tabla.heading(col, text=col)
+            tabla.column(col, width=130, anchor='center')
+        
+        if self.ford_fulkerson:
+            for arista in self.grafo.aristas_info:
+                u, v = arista['origen'], arista['destino']
+                flujo = self.ford_fulkerson.flujo_resultado[u][v]
+                if flujo > 0:
+                    cap = arista['capacidad']
+                    utilizacion = f"{(flujo/cap*100):.1f}%" if cap > 0 else "0%"
+                    tabla.insert('', tk.END, values=(f"{u} → {v}", flujo, cap, utilizacion))
+        
+        scroll = ttk.Scrollbar(tabla_frame, orient='vertical', command=tabla.yview)
+        tabla.configure(yscrollcommand=scroll.set)
+        
+        tabla.pack(side='left', fill='both', expand=True)
+        scroll.pack(side='right', fill='y')
+        
+        btn_frame = tk.Frame(ventana, bg='white')
+        btn_frame.pack(pady=10)
+        
+        tk.Button(btn_frame, text="Ver Detallado Completo", command=self.ver_detallado_completo,
+                 font=('Arial', 11, 'bold'), bg='#8B5CF6', 
+                 fg='white', relief='flat', pady=10, padx=25).pack(side='left', padx=5)
+        
+        tk.Button(btn_frame, text="Cerrar", command=ventana.destroy,
+                 font=('Arial', 11, 'bold'), bg=self.colores['primario'], 
+                 fg='white', relief='flat', pady=10, padx=25).pack(side='left', padx=5)
+    
+    def mostrar_resultado(self, texto):
+        self.results_text.delete(1.0, tk.END)
+        self.results_text.insert(1.0, texto)
+        self.results_text.see(1.0)
+
+def main():
+    root = tk.Tk()
+    app = GPSOptimizerApp(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
