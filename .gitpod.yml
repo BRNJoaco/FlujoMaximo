@@ -1,0 +1,6 @@
+image: gitpod/workspace-full-vnc
+
+tasks:
+  - name: Ejecutar Tkinter
+    command: |
+      python3 FlujoMaximo.py
