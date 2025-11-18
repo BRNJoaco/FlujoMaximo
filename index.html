@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ford-Fulkerson - Flujo Máximo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f0f0; }
+        
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .section {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #1f2937;
+        }
+        
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        
+        label {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        input, select {
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 8px;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+            transition: opacity 0.2s;
+        }
+        
+        button:hover { opacity: 0.9; }
+        
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-secondary { background: #7c3aed; color: white; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-warning { background: #ea580c; color: white; }
+        .btn-info { background: #6366f1; color: white; }
+        
+        #canvas {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+        
+        .results {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 50px auto;
+            padding: 0;
+            border-radius: 8px;
+            max-width: 900px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        
+        .modal-header {
+            background: #16a34a;
+            color: white;
+            padding: 20px;
+            border-radius: 8px 8px 0 0;
+            text-align: center;
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .close {
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+        }
+        
+        .close:hover { color: #fef3c7; }
+        
+        .validation-box {
+            background: #E8F5E9;
+            border: 2px solid #2E7D32;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        
+        .flujo-maximo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2563eb;
+            margin: 15px 0;
+            text-align: center;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        
+        table th, table td {
+            border: 1px solid #e0e0e0;
+            padding: 10px;
+            text-align: center;
+        }
+        
+        table th {
+            background: #f3f4f6;
+            font-weight: bold;
+        }
+        
+        .legend {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 15px 0;
+            font-size: 12px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>FORD-FULKERSON - FLUJO MÁXIMO</h1>
+    </div>
+
+    <div class="container">
+        <div class="panel">
+            <h2>CONTROLES</h2>
+            
+            <div class="section">
+                <div class="section-title">Configuración</div>
+                <div class="input-group">
+                    <label>Número de Nodos (8-16):</label>
+                    <input type="number" id="numNodos" value="8" min="8" max="16">
+                    <button onclick="actualizarCombos()" class="btn-info" style="margin-top: 5px;">Actualizar</button>
+                </div>
+                <div class="input-group">
+                    <label>Fuente:</label>
+                    <select id="fuente"></select>
+                </div>
+                <div class="input-group">
+                    <label>Sumidero:</label>
+                    <select id="sumidero"></select>
+                </div>
+            </div>
+
+            <button onclick="generarGrafoAleatorio()" class="btn-secondary">🎲 Grafo Aleatorio</button>
+            <button onclick="mostrarModalManual()" class="btn-info">✏️ Construcción Manual</button>
+            <button onclick="calcularFlujoCompleto()" class="btn-success">▶️ Calcular Flujo</button>
+            <button onclick="verDetalladoCompleto()" class="btn-primary">📄 Ver Detallado Completo</button>
+            <button onclick="limpiarGrafo()" class="btn-warning">🗑️ Limpiar</button>
+
+            <div class="info-box" id="infoGrafo"></div>
+            <div class="results" id="resultados">Bienvenido al Algoritmo Ford-Fulkerson
+
+INSTRUCCIONES:
+1. Ingresa el número de nodos (8-16)
+2. Elige 'Grafo Aleatorio' o 'Construcción Manual'
+3. Selecciona fuente y sumidero
+4. Presiona 'Calcular Flujo'</div>
+        </div>
+
+        <div class="panel">
+            <h2>VISUALIZACIÓN DEL GRAFO</h2>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4CAF50;"></div>
+                    <span>Fuente</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #F44336;"></div>
+                    <span>Sumidero</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #2196F3;"></div>
+                    <span>Intermedio</span>
+                </div>
+            </div>
+            <div class="legend" id="legendAristas" style="display: none;">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #D32F2F;"></div>
+                    <span>Saturada (100%)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #FF9800;"></div>
+                    <span>Alta (≥70%)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4CAF50;"></div>
+                    <span>Con flujo</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #BDBDBD;"></div>
+                    <span>Sin flujo</span>
+                </div>
+            </div>
+            <canvas id="canvas"></canvas>
+        </div>
+    </div>
+
+    <div id="modalManual" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header" style="background: #6366f1;">
+                <span class="close" onclick="cerrarModalManual()">&times;</span>
+                <h2>Construcción Manual</h2>
+            </div>
+            <div class="modal-body">
+                <div class="section">
+                    <div class="input-group">
+                        <label>Origen:</label>
+                        <select id="origenManual"></select>
+                    </div>
+                    <div class="input-group">
+                        <label>Destino:</label>
+                        <select id="destinoManual"></select>
+                    </div>
+                    <div class="input-group">
+                        <label>Capacidad:</label>
+                        <input type="number" id="capacidadManual" min="1" value="10">
+                    </div>
+                    <button onclick="agregarAristaManual()" class="btn-success">➕ Agregar</button>
+                </div>
+                <div class="results" style="max-height: 200px;" id="listaAristas">No hay aristas.</div>
+                <button onclick="finalizarManual()" class="btn-primary">✔️ Finalizar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalResultado" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="close" onclick="cerrarModalResultado()">&times;</span>
+                <h2>FLUJO MÁXIMO CALCULADO</h2>
+            </div>
+            <div class="modal-body" id="contenidoResultado"></div>
+        </div>
+    </div>
+
+    <div id="modalDetallado" class="modal">
+        <div class="modal-content">
+            <div class="modal-header" style="background: #8B5CF6;">
+                <span class="close" onclick="cerrarModalDetallado()">&times;</span>
+                <h2>DETALLADO COMPLETO</h2>
+            </div>
+            <div class="modal-body">
+                <div class="results" style="max-height: 500px;" id="detalladoCompleto"></div>
+                <button onclick="copiarDetallado()" class="btn-info">📋 Copiar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://flujomaximo.onrender.com';
+        var grafo = {nodos: [], aristas: []};
+        var flujoResultado = null;
+        var detalladoTexto = "";
+        var canvas, ctx;
+
+        function inicializar() {
+            canvas = document.getElementById('canvas');
+            ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = 600;
+            actualizarCombos();
+            actualizarInfo();
+        }
+
+        function actualizarCombos() {
+            var n = parseInt(document.getElementById('numNodos').value);
+            if (n < 8 || n > 16) {alert('Nodos: 8-16'); return;}
+            var f = document.getElementById('fuente');
+            var s = document.getElementById('sumidero');
+            f.innerHTML = ''; s.innerHTML = '';
+            for (var i = 0; i < n; i++) {
+                f.innerHTML += '<option value="' + i + '">' + i + '</option>';
+                s.innerHTML += '<option value="' + i + '">' + i + '</option>';
+            }
+            f.value = '0'; s.value = String(n - 1);
+        }
+
+        function generarGrafoAleatorio() {
+            var n = parseInt(document.getElementById('numNodos').value);
+            var fuente = parseInt(document.getElementById('fuente').value);
+            var sumidero = parseInt(document.getElementById('sumidero').value);
+            grafo = {nodos: [], aristas: []};
+            for (var i = 0; i < n; i++) grafo.nodos.push(i);
+            var intermedios = [];
+            for (var i = 0; i < n; i++) if (i !== fuente && i !== sumidero) intermedios.push(i);
+            var tam = Math.floor(intermedios.length / 3);
+            var capa1 = intermedios.slice(0, tam);
+            var capa2 = intermedios.slice(tam, tam * 2);
+            var capa3 = intermedios.slice(tam * 2);
+            for (var i = 0; i < capa1.length; i++) agregarArista(fuente, capa1[i], Math.floor(Math.random() * 13) + 8);
+            for (var i = 0; i < capa1.length; i++) if (capa2.length > 0) for (var j = 0; j < Math.min(2, capa2.length); j++) agregarArista(capa1[i], capa2[Math.floor(Math.random() * capa2.length)], Math.floor(Math.random() * 14) + 5);
+            for (var i = 0; i < capa2.length; i++) if (capa3.length > 0) for (var j = 0; j < Math.min(2, capa3.length); j++) agregarArista(capa2[i], capa3[Math.floor(Math.random() * capa3.length)], Math.floor(Math.random() * 14) + 5);
+            for (var i = 0; i < capa3.length; i++) agregarArista(capa3[i], sumidero, Math.floor(Math.random() * 13) + 8);
+            actualizarInfo(); dibujarGrafo();
+            mostrarResultado('GRAFO ALEATORIO\n\n• Nodos: ' + n + '\n• Aristas: ' + grafo.aristas.length);
+        }
+
+        function agregarArista(o, d, c) {
+            for (var i = 0; i < grafo.aristas.length; i++) if (grafo.aristas[i].origen === o && grafo.aristas[i].destino === d) {grafo.aristas[i].capacidad = c; return;}
+            grafo.aristas.push({origen: o, destino: d, capacidad: c});
+        }
+
+        function calcularFlujoCompleto() {
+            if (grafo.nodos.length === 0) {alert('Genera un grafo primero'); return;}
+            var f = parseInt(document.getElementById('fuente').value);
+            var s = parseInt(document.getElementById('sumidero').value);
+            var res = fordFulkerson(grafo, f, s);
+            flujoResultado = res; detalladoTexto = res.detallado;
+            document.getElementById('legendAristas').style.display = 'flex';
+            var txt = '==================================================\nRESUMEN\n==================================================\n\nFLUJO MÁXIMO: ' + res.flujoMaximo + '\nCORTE MÍNIMO: ' + res.corteMinimo.capacidad + '\n\n';
+            if (res.flujoMaximo === res.corteMinimo.capacidad) txt += '✅ VALIDADO\n\n';
+            else txt += '⚠️ VERIFICAR\n\n';
+            txt += 'Caminos: ' + res.caminos.length + '\n';
+            for (var i = 0; i < res.caminos.length; i++) txt += (i + 1) + '. ' + res.caminos[i].camino.join(' → ') + ' (Δ=' + res.caminos[i].flujo + ')\n';
+            mostrarResultado(txt); dibujarGrafo(); mostrarModalResultadoFinal(res);
+        }
+
+        function fordFulkerson(g, f, s) {
+            var r = {}; var fl = {}; for (var i = 0; i < g.nodos.length; i++) fl[g.nodos[i]] = {};
+            for (var i = 0; i < g.aristas.length; i++) {var a = g.aristas[i]; if (!r[a.origen]) r[a.origen] = {}; r[a.origen][a.destino] = a.capacidad;}
+            var max = 0; var cams = []; 
+            var det = '======================================================================\n';
+            det += 'ALGORITMO FORD-FULKERSON CON ETIQUETADO\n';
+            det += '======================================================================\n';
+            det += 'Fuente: ' + f + ', Sumidero: ' + s + '\n\n';
+            var paso = 0;
+            while (true) {
+                paso++; 
+                det += '\n──────────────────────────────────────────────────────────────────────\n';
+                det += 'PASO ' + paso + ': Búsqueda de camino aumentante\n';
+                det += '──────────────────────────────────────────────────────────────────────\n';
+                
+                var b = bfsConEtiquetas(r, g.nodos, f, s, fl, g);
+                det += b.log;
+                
+                if (!b.camino) {
+                    det += '\n  No se encontró camino aumentante\n';
+                    det += '  El sumidero ' + s + ' no fue etiquetado\n';
+                    break;
+                }
+                
+                det += '\n  Camino aumentante encontrado: ' + b.camino.join(' → ') + '\n';
+                
+                var min = Infinity;
+                for (var i = 0; i < b.camino.length - 1; i++) {
+                    var u = b.camino[i]; var v = b.camino[i + 1]; 
+                    min = Math.min(min, r[u][v]);
+                }
+                
+                det += '\n  Análisis de aristas en el camino:\n';
+                for (var i = 0; i < b.camino.length - 1; i++) {
+                    var u = b.camino[i]; var v = b.camino[i + 1];
+                    var capRes = r[u][v];
+                    var esDirecta = false;
+                    var capOrig = 0;
+                    for (var j = 0; j < g.aristas.length; j++) {
+                        if (g.aristas[j].origen === u && g.aristas[j].destino === v) {
+                            esDirecta = true;
+                            capOrig = g.aristas[j].capacidad;
+                            break;
+                        }
+                    }
+                    var flujoAct = fl[u][v] || 0;
+                    
+                    if (esDirecta) {
+                        det += '    ' + u + ' → ' + v + ': capacidad residual = ' + capRes + ', capacidad original = ' + capOrig + ', flujo actual = ' + flujoAct + '\n';
+                    } else {
+                        det += '    ' + u + ' → ' + v + ': arista inversa (reduciendo flujo ' + v + '→' + u + ')\n';
+                    }
+                }
+                
+                det += '\n  Δ(sumidero) = ' + min + ' ← Flujo a enviar por el camino\n';
+                
+                for (var i = 0; i < b.camino.length - 1; i++) {
+                    var u = b.camino[i]; var v = b.camino[i + 1]; 
+                    r[u][v] -= min; 
+                    if (!r[v]) r[v] = {}; 
+                    r[v][u] = (r[v][u] || 0) + min; 
+                    var ex = false; 
+                    for (var j = 0; j < g.aristas.length; j++) {
+                        if (g.aristas[j].origen === u && g.aristas[j].destino === v) {
+                            ex = true; break;
+                        }
+                    }
+                    if (ex) fl[u][v] = (fl[u][v] || 0) + min;
+                    else fl[v][u] = (fl[v][u] || 0) - min;
+                }
+                max += min; 
+                cams.push({camino: b.camino, flujo: min});
+                det += '\n  Flujo acumulado total: ' + max + '\n';
+            }
+            
+            det += '\n======================================================================\n';
+            det += 'RESULTADO FINAL\n';
+            det += '======================================================================\n';
+            det += 'Flujo máximo encontrado: ' + max + '\n\n';
+            det += 'Asignación de flujo por arista:\n';
+            
+            var fla = []; 
+            var aristasOrdenadas = g.aristas.slice().sort(function(a, b) {
+                if (a.origen !== b.origen) return a.origen - b.origen;
+                return a.destino - b.destino;
+            });
+            
+            for (var i = 0; i < aristasOrdenadas.length; i++) {
+                var a = aristasOrdenadas[i]; 
+                var flu = fl[a.origen][a.destino] || 0; 
+                if (flu > 0) {
+                    det += '  ' + a.origen + ' → ' + a.destino + ': ' + flu + '/' + a.capacidad + '\n'; 
+                    fla.push({origen: a.origen, destino: a.destino, flujo: flu, capacidad: a.capacidad});
+                }
+            }
+            
+            var cm = calcularCorteMinimo(r, g.nodos, f, s, g);
+            
+            det += '\n======================================================================\n';
+            det += 'CORTE MÍNIMO (VALIDACIÓN DEL RESULTADO)\n';
+            det += '======================================================================\n\n';
+            det += 'Conjunto S (alcanzables desde fuente): [' + cm.conjuntoS.join(', ') + ']\n';
+            det += 'Conjunto T (no alcanzables): [' + cm.conjuntoT.join(', ') + ']\n\n';
+            det += 'Aristas del corte mínimo (S → T):\n';
+            for (var i = 0; i < cm.aristas.length; i++) {
+                var ar = cm.aristas[i];
+                det += '  ' + ar.origen + ' → ' + ar.destino + ': capacidad = ' + ar.capacidad + '\n';
+            }
+            det += '\n──────────────────────────────────────────────────────────────────────\n';
+            det += 'Capacidad total del corte = ' + cm.capacidad + '\n';
+            det += 'Flujo máximo calculado = ' + max + '\n';
+            det += '──────────────────────────────────────────────────────────────────────\n\n';
+            
+            if (max === cm.capacidad) {
+                det += '✅ VERIFICACIÓN CORRECTA:\n';
+                det += '   Flujo máximo (' + max + ') = Capacidad corte mínimo (' + cm.capacidad + ')\n';
+                det += '   El resultado está VALIDADO por el teorema de flujo máximo-corte mínimo\n';
+            } else {
+                det += '⚠️ ADVERTENCIA:\n';
+                det += '   Flujo máximo (' + max + ') ≠ Capacidad corte mínimo (' + cm.capacidad + ')\n';
+                det += '   Puede haber un error en el cálculo\n';
+            }
+            
+            det += '\n======================================================================\n';
+            det += 'BÚSQUEDA DE SOLUCIONES ALTERNATIVAS\n';
+            det += '======================================================================\n\n';
+            
+            var noSaturadas = [];
+            for (var i = 0; i < g.aristas.length; i++) {
+                var a = g.aristas[i];
+                var flu = fl[a.origen][a.destino] || 0;
+                if (flu > 0 && flu < a.capacidad) {
+                    noSaturadas.push({origen: a.origen, destino: a.destino, flujo: flu, capacidad: a.capacidad});
+                }
+            }
+            
+            if (noSaturadas.length > 0) {
+                det += 'Aristas con capacidad no saturada:\n';
+                for (var i = 0; i < noSaturadas.length; i++) {
+                    var ns = noSaturadas[i];
+                    det += '  ' + ns.origen + ' → ' + ns.destino + ': ' + ns.flujo + '/' + ns.capacidad + ' (disponible: ' + (ns.capacidad - ns.flujo) + ')\n';
+                }
+                det += '\nExisten posibles redistribuciones del flujo manteniendo el valor máximo ' + max + '\n';
+            } else {
+                det += 'Todas las aristas del flujo están saturadas.\n';
+                det += 'La solución encontrada es única (no hay redistribuciones posibles).\n';
+            }
+            
+            return {flujoMaximo: max, caminos: cams, flujos: fla, corteMinimo: cm, detallado: det};
+        }
+
+        function bfs(r, n, f, s) {
+            var v = {}; var p = {}; var c = [f]; v[f] = true;
+            while (c.length > 0) {var a = c.shift(); if (!r[a]) continue; for (var ve in r[a]) {var vv = parseInt(ve); if (!v[vv] && r[a][vv] > 0) {v[vv] = true; p[vv] = a; c.push(vv); if (vv === s) {var cam = []; var t = s; while (t !== f) {cam.unshift(t); t = p[t];} cam.unshift(f); return {camino: cam};}}}}
+            return {camino: null};
+        }
+
+        function calcularCorteMinimo(r, n, f, s, g) {
+            var v = {}; var c = [f]; v[f] = true;
+            while (c.length > 0) {var no = c.shift(); if (!r[no]) continue; for (var ve in r[no]) {var vv = parseInt(ve); if (!v[vv] && r[no][vv] > 0) {v[vv] = true; c.push(vv);}}}
+            var cS = []; var cT = []; for (var i = 0; i < n.length; i++) if (v[n[i]]) cS.push(n[i]); else cT.push(n[i]);
+            var aC = []; var cap = 0; for (var i = 0; i < g.aristas.length; i++) {var a = g.aristas[i]; if (v[a.origen] && !v[a.destino]) {aC.push(a); cap += a.capacidad;}}
+            return {conjuntoS: cS, conjuntoT: cT, aristas: aC, capacidad: cap};
+        }
+
+        function dibujarGrafo() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (grafo.nodos.length === 0) return;
+            var f = parseInt(document.getElementById('fuente').value); var s = parseInt(document.getElementById('sumidero').value);
+            var pos = calcularPosiciones(f, s);
+            for (var i = 0; i < grafo.aristas.length; i++) {
+                var a = grafo.aristas[i]; var pO = pos[a.origen]; var pD = pos[a.destino]; var col = '#424242'; var w = 2; var lab = String(a.capacidad);
+                if (flujoResultado) {var flu = null; for (var j = 0; j < flujoResultado.flujos.length; j++) if (flujoResultado.flujos[j].origen === a.origen && flujoResultado.flujos[j].destino === a.destino) {flu = flujoResultado.flujos[j]; break;} if (flu) {lab = flu.flujo + '/' + flu.capacidad; var u = flu.flujo / flu.capacidad; if (u >= 1.0) {col = '#D32F2F'; w = 4;} else if (u >= 0.7) {col = '#FF9800'; w = 3;} else {col = '#4CAF50'; w = 2.5;}} else {col = '#BDBDBD'; w = 1.5;}}
+                dibujarFlecha(pO.x, pO.y, pD.x, pD.y, col, w); var mX = (pO.x + pD.x) / 2; var mY = (pO.y + pD.y) / 2; ctx.fillStyle = 'white'; ctx.fillRect(mX - 20, mY - 10, 40, 20); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.strokeRect(mX - 20, mY - 10, 40, 20); ctx.fillStyle = '#0D47A1'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(lab, mX, mY);
+            }
+            for (var i = 0; i < grafo.nodos.length; i++) {var n = grafo.nodos[i]; var p = pos[n]; var c = '#2196F3'; if (n === f) c = '#4CAF50'; if (n === s) c = '#F44336'; ctx.beginPath(); ctx.arc(p.x, p.y, 25, 0, 2 * Math.PI); ctx.fillStyle = c; ctx.fill(); ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = 'white'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(n), p.x, p.y);}
+        }
+
+        function calcularPosiciones(f, s) {
+            var pos = {}; var niv = {}; var v = {}; var c = [f]; niv[f] = 0; v[f] = true;
+            while (c.length > 0) {var n = c.shift(); var aN = []; for (var i = 0; i < grafo.aristas.length; i++) if (grafo.aristas[i].origen === n) aN.push(grafo.aristas[i]); for (var i = 0; i < aN.length; i++) {var a = aN[i]; if (!v[a.destino]) {v[a.destino] = true; niv[a.destino] = niv[n] + 1; c.push(a.destino);}}}
+            for (var i = 0; i < grafo.nodos.length; i++) {var n = grafo.nodos[i]; if (!niv.hasOwnProperty(n)) niv[n] = niv[s] || 2;}
+            var pN = {}; for (var nK in niv) {var ni = niv[nK]; if (!pN[ni]) pN[ni] = []; pN[ni].push(parseInt(nK));}
+            for (var nK in pN) pN[nK].sort(function(a, b) {return a - b;});
+            var nivA = []; for (var k in pN) nivA.push(Number(k)); var maxN = Math.max.apply(null, nivA);
+            var w = canvas.width; var h = canvas.height; var m = 80;
+            for (var nK in pN) {var ns = pN[nK]; var x = m + (parseInt(nK) / maxN) * (w - 2 * m); var eY = (h - 2 * m) / (ns.length + 1); for (var idx = 0; idx < ns.length; idx++) {var n = ns[idx]; pos[n] = {x: x, y: m + (idx + 1) * eY};}}
+            return pos;
+        }
+
+        function dibujarFlecha(x1, y1, x2, y2, c, w) {
+            var hl = 15; var ang = Math.atan2(y2 - y1, x2 - x1); var aj = 25;
+            x2 = x2 - aj * Math.cos(ang); y2 = y2 - aj * Math.sin(ang); x1 = x1 + aj * Math.cos(ang); y1 = y1 + aj * Math.sin(ang);
+            ctx.strokeStyle = c; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+            ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - hl * Math.cos(ang - Math.PI / 6), y2 - hl * Math.sin(ang - Math.PI / 6)); ctx.lineTo(x2 - hl * Math.cos(ang + Math.PI / 6), y2 - hl * Math.sin(ang + Math.PI / 6)); ctx.closePath(); ctx.fill();
+        }
+
+        function mostrarModalManual() {
+            var n = parseInt(document.getElementById('numNodos').value); var m = document.getElementById('modalManual');
+            var oS = document.getElementById('origenManual'); var dS = document.getElementById('destinoManual');
+            oS.innerHTML = ''; dS.innerHTML = ''; for (var i = 0; i < n; i++) {oS.innerHTML += '<option value="' + i + '">' + i + '</option>'; dS.innerHTML += '<option value="' + i + '">' + i + '</option>';}
+            var nA = []; for (var i = 0; i < n; i++) nA.push(i);
+            grafo = {nodos: nA, aristas: []}; document.getElementById('listaAristas').textContent = 'No hay aristas.'; m.style.display = 'block'; actualizarInfo();
+        }
+
+        function cerrarModalManual() {document.getElementById('modalManual').style.display = 'none';}
+
+        function agregarAristaManual() {
+            var o = parseInt(document.getElementById('origenManual').value); var d = parseInt(document.getElementById('destinoManual').value);
+            var c = parseInt(document.getElementById('capacidadManual').value);
+            if (o === d) {alert('Origen y destino diferentes'); return;} if (c <= 0) {alert('Capacidad positiva'); return;}
+            agregarArista(o, d, c); actualizarListaAristas(); dibujarGrafo(); actualizarInfo();
+        }
+
+        function actualizarListaAristas() {
+            var t = 'Aristas:\n\n'; for (var i = 0; i < grafo.aristas.length; i++) {var a = grafo.aristas[i]; t += (i + 1) + '. ' + a.origen + ' → ' + a.destino + ' [cap: ' + a.capacidad + ']\n';}
+            document.getElementById('listaAristas').textContent = t;
+        }
+
+        function finalizarManual() {
+            if (grafo.aristas.length === 0) {alert('Agrega aristas'); return;}
+            cerrarModalManual(); actualizarInfo(); dibujarGrafo(); mostrarResultado('GRAFO MANUAL\n\nAhora puedes calcular el flujo');
+        }
+
+        function verDetalladoCompleto() {
+            if (!detalladoTexto) {alert('Calcula el flujo primero'); return;}
+            document.getElementById('detalladoCompleto').textContent = detalladoTexto;
+            document.getElementById('modalDetallado').style.display = 'block';
+        }
+
+        function cerrarModalDetallado() {document.getElementById('modalDetallado').style.display = 'none';}
+
+        function copiarDetallado() {
+            var t = document.createElement('textarea'); t.value = detalladoTexto; document.body.appendChild(t); t.select();
+            document.execCommand('copy'); document.body.removeChild(t); alert('Copiado al portapapeles');
+        }
+
+        function limpiarGrafo() {
+            grafo = {nodos: [], aristas: []}; flujoResultado = null; detalladoTexto = "";
+            ctx.clearRect(0, 0, canvas.width, canvas.height); document.getElementById('legendAristas').style.display = 'none';
+            actualizarInfo(); mostrarResultado('Grafo limpiado\n\nGenera o construye un nuevo grafo');
+        }
+
+        function actualizarInfo() {
+            var n = grafo.nodos.length > 0 ? grafo.nodos.join(', ') : 'Ninguno';
+            var f = document.getElementById('fuente').value; var s = document.getElementById('sumidero').value;
+            document.getElementById('infoGrafo').innerHTML = 'NODOS: ' + n + '<br>ARISTAS: ' + grafo.aristas.length + '<br>FUENTE: ' + f + '<br>SUMIDERO: ' + s;
+        }
+
+        function mostrarResultado(t) {document.getElementById('resultados').textContent = t;}
+
+        function mostrarModalResultadoFinal(res) {
+            var html = '<div class="flujo-maximo">Flujo Máximo: ' + res.flujoMaximo + '</div>';
+            
+            if (res.flujoMaximo === res.corteMinimo.capacidad) {
+                html += '<div class="validation-box">';
+                html += '<h3 style="color: #2E7D32; margin-bottom: 10px;">✅ RESULTADO VALIDADO</h3>';
+                html += '<p>Flujo máximo (' + res.flujoMaximo + ') = Capacidad corte mínimo (' + res.corteMinimo.capacidad + ')</p>';
+                html += '<p style="font-size: 12px; font-style: italic; margin-top: 10px;">Teorema flujo máximo - corte mínimo cumplido</p>';
+                html += '</div>';
+            } else {
+                html += '<div class="validation-box error">';
+                html += '<h3 style="color: #D32F2F; margin-bottom: 10px;">⚠️ VERIFICAR CÁLCULO</h3>';
+                html += '<p>Flujo máximo (' + res.flujoMaximo + ') ≠ Capacidad corte (' + res.corteMinimo.capacidad + ')</p>';
+                html += '</div>';
+            }
+
+            html += '<div style="background: #f3f4f6; padding: 15px; border-radius: 6px; margin: 15px 0;">';
+            html += '<h3 style="margin-bottom: 10px;">Información Adicional</h3>';
+            html += '<p><strong>Caminos aumentantes:</strong> ' + res.caminos.length + '</p>';
+            html += '<p><strong>Aristas activas:</strong> ' + res.flujos.length + '</p>';
+            html += '<p><strong>Capacidad corte mínimo:</strong> ' + res.corteMinimo.capacidad + '</p>';
+            html += '</div>';
+
+            html += '<h3 style="margin: 20px 0 10px 0;">Flujos por Arista:</h3>';
+            html += '<table><thead><tr><th>Arista</th><th>Flujo</th><th>Capacidad</th><th>Uso %</th></tr></thead><tbody>';
+            
+            for (var i = 0; i < res.flujos.length; i++) {
+                var f = res.flujos[i];
+                var uso = ((f.flujo / f.capacidad) * 100).toFixed(1);
+                html += '<tr><td>' + f.origen + ' → ' + f.destino + '</td><td>' + f.flujo + '</td><td>' + f.capacidad + '</td><td>' + uso + '%</td></tr>';
+            }
+            
+            html += '</tbody></table>';
+
+            document.getElementById('contenidoResultado').innerHTML = html;
+            document.getElementById('modalResultado').style.display = 'block';
+        }
+
+        function cerrarModalResultado() {document.getElementById('modalResultado').style.display = 'none';}
+
+        window.onload = inicializar;
+        window.onresize = function() {if (canvas) {canvas.width = canvas.offsetWidth; dibujarGrafo();}};
+    </script>
+</body>
+</html>
