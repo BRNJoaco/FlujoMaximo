@@ -342,7 +342,7 @@ INSTRUCCIONES:
     </div>
 
     <script>
-        const API_URL = 'https://flujomaximo.onrender.com';
+        var API_URL = 'https://flujomaximo.onrender.com';
         var grafo = {nodos: [], aristas: []};
         var flujoResultado = null;
         var detalladoTexto = "";
@@ -561,10 +561,114 @@ INSTRUCCIONES:
             return {flujoMaximo: max, caminos: cams, flujos: fla, corteMinimo: cm, detallado: det};
         }
 
-        function bfs(r, n, f, s) {
-            var v = {}; var p = {}; var c = [f]; v[f] = true;
-            while (c.length > 0) {var a = c.shift(); if (!r[a]) continue; for (var ve in r[a]) {var vv = parseInt(ve); if (!v[vv] && r[a][vv] > 0) {v[vv] = true; p[vv] = a; c.push(vv); if (vv === s) {var cam = []; var t = s; while (t !== f) {cam.unshift(t); t = p[t];} cam.unshift(f); return {camino: cam};}}}}
-            return {camino: null};
+        function bfsConEtiquetas(r, n, f, s, fl, g) {
+            var v = {}; var p = {}; var etiq = {}; var c = [f]; 
+            v[f] = true; etiq[f] = {previo: '-', delta: Infinity, signo: null};
+            
+            var log = '  Etiquetado de nodos:\n';
+            log += '    Nodo ' + f + ': (-, ∞)\n';
+            
+            while (c.length > 0) {
+                var actual = c.shift(); 
+                if (!r[actual]) continue; 
+                var deltaActual = etiq[actual].delta;
+                
+                for (var vecino in r[actual]) {
+                    var vv = parseInt(vecino); 
+                    if (!v[vv] && r[actual][vv] > 0) {
+                        var esDirecta = false;
+                        for (var j = 0; j < g.aristas.length; j++) {
+                            if (g.aristas[j].origen === actual && g.aristas[j].destino === vv) {
+                                esDirecta = true;
+                                break;
+                            }
+                        }
+                        
+                        var deltaNuevo = Math.min(deltaActual, r[actual][vv]);
+                        var signo = '+';
+                        
+                        if (!esDirecta) {
+                            var flujoInverso = fl[vv][actual] || 0;
+                            if (flujoInverso > 0) {
+                                deltaNuevo = Math.min(deltaActual, flujoInverso);
+                                signo = '-';
+                            }
+                        }
+                        
+                        etiq[vv] = {previo: actual, delta: deltaNuevo, signo: signo};
+                        log += '    Nodo ' + vv + ': (' + actual + signo + ', ' + deltaNuevo + ')\n';
+                        
+                        v[vv] = true; 
+                        p[vv] = actual; 
+                        c.push(vv); 
+                        
+                        if (vv === s) {
+                            var cam = []; var t = s; 
+                            while (t !== f) {
+                                cam.unshift(t); t = p[t];
+                            } 
+                            cam.unshift(f); 
+                            return {camino: cam, log: log};
+                        }
+                    }
+                }
+            }
+            return {camino: null, log: log};
+        }
+
+        function bfsConEtiquetas(r, nodos, f, s, fl, g) {
+            var v = {}; var p = {}; var etiq = {}; var c = [f]; 
+            v[f] = true; etiq[f] = {previo: '-', delta: Infinity, signo: null};
+            
+            var log = '  Etiquetado de nodos:\n';
+            log += '    Nodo ' + f + ': (-, ∞)\n';
+            
+            while (c.length > 0) {
+                var actual = c.shift(); 
+                if (!r[actual]) continue; 
+                var deltaActual = etiq[actual].delta;
+                
+                for (var vecino in r[actual]) {
+                    var vv = parseInt(vecino); 
+                    if (!v[vv] && r[actual][vv] > 0) {
+                        var esDirecta = false;
+                        for (var j = 0; j < g.aristas.length; j++) {
+                            if (g.aristas[j].origen === actual && g.aristas[j].destino === vv) {
+                                esDirecta = true;
+                                break;
+                            }
+                        }
+                        
+                        var deltaNuevo = Math.min(deltaActual, r[actual][vv]);
+                        var signo = '+';
+                        
+                        if (!esDirecta) {
+                            var flujoInverso = fl[vv][actual] || 0;
+                            if (flujoInverso > 0) {
+                                deltaNuevo = Math.min(deltaActual, flujoInverso);
+                                signo = '-';
+                            }
+                        }
+                        
+                        etiq[vv] = {previo: actual, delta: deltaNuevo, signo: signo};
+                        log += '    Nodo ' + vv + ': (' + actual + signo + ', ' + deltaNuevo + ')\n';
+                        
+                        v[vv] = true; 
+                        p[vv] = actual; 
+                        c.push(vv); 
+                        
+                        if (vv === s) {
+                            var cam = []; var t = s; 
+                            while (t !== f) {
+                                cam.unshift(t); t = p[t];
+                            } 
+                            cam.unshift(f); 
+                            return {camino: cam, log: log};
+                        }
+                    }
+                }
+            }
+            return {camino: null, log: log};
         }
 
         function calcularCorteMinimo(r, n, f, s, g) {
